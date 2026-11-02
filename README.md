@@ -8,9 +8,9 @@
 
 ## 安卓安装
 
-在 [Releases](https://github.com/JeffGu98/huarongdao/releases) 下载 `huarongdao-1.0.1.apk`。安装前允许这个来源的应用。界面按竖屏排，棋盘按屏幕宽度铺开。
+在 [Releases](https://github.com/JeffGu98/huarongdao/releases) 下载 `huarongdao-1.0.2.apk`。安装前允许这个来源的应用。界面按竖屏排，棋盘按屏幕宽度铺开。
 
-点数字，或用方向键移动空格。红边是还没归位的块。
+点数字，或用方向键移动空格。红边是还没归位的块。随机开局后点「自动还原」，会把这一局演示滑回终态。浅局走最短步数，随机开局只保证能还原，不保证最少步。
 
 ## 本地运行
 

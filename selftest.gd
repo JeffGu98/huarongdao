@@ -174,6 +174,17 @@ func _run_logic() -> bool:
 	if Puzzle.tile_manhattan(deal) < 8:
 		push_error("随机开局太浅：%d" % Puzzle.tile_manhattan(deal))
 		return false
+	if not _demo_replays(deal):
+		return false
+	var photo_demo := Puzzle.solve_demo(photo)
+	if photo_demo["ok"] or str(photo_demo["reason"]) != "unsolvable":
+		push_error("照片局面被演示解接受了")
+		return false
+	for seed in [0, 7]:
+		var extra := RandomNumberGenerator.new()
+		extra.seed = seed
+		if not _demo_replays(Puzzle.shuffled_board(100, extra)):
+			return false
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 2
@@ -208,6 +219,30 @@ func _run_logic() -> bool:
 		push_error("回放后没有回到终态")
 		return false
 	print("LOGIC_OK steps=%d ms=%.1f" % [solved["moves"].size(), elapsed_ms])
+	return true
+
+
+func _demo_replays(start: Array) -> bool:
+	var started_us := Time.get_ticks_usec()
+	var demo := Puzzle.solve_demo(start)
+	var elapsed_ms := (Time.get_ticks_usec() - started_us) / 1000.0
+	if not demo["ok"]:
+		push_error("随机开局没有演示解：%s" % str(demo["reason"]))
+		return false
+	var count: int = demo["moves"].size()
+	if count < 20 or count > 600:
+		push_error("演示步数异常：%d" % count)
+		return false
+	var replay := start.duplicate()
+	for move in demo["moves"]:
+		var tile := Puzzle.move_blank(replay, int(move["dr"]), int(move["dc"]))
+		if tile != int(move["tile"]):
+			push_error("演示步骤和盘面不一致")
+			return false
+	if not Puzzle.is_solved(replay):
+		push_error("演示回放没有回到终态")
+		return false
+	print("DEMO_OK steps=%d ms=%.1f" % [count, elapsed_ms])
 	return true
 
 

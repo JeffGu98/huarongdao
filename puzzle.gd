@@ -209,3 +209,273 @@ static func _search(path_boards: Array, path_moves: Array, cost: int, bound: int
 		path_boards.pop_back()
 		path_moves.pop_back()
 	return minimum
+
+
+# 深局不求最短。按行、再按列把棋子送回原位，最后 2×2 用穷举。
+# 每行末尾两格、每列剩下的两格要一起归位，否则角上只剩一条窄路，棋子进不去。
+static func solve_demo(start: Array) -> Dictionary:
+	if not solvable(start):
+		return {"ok": false, "reason": "unsolvable", "moves": []}
+	if is_solved(start):
+		return {"ok": true, "reason": "already", "moves": []}
+	var board := start.duplicate()
+	var moves: Array = []
+	var frozen: Array = []
+	for row in range(N - 2):
+		for col in range(N - 2):
+			var tile := row * N + col + 1
+			var target := row * N + col
+			if not _place_one(board, moves, tile, target, frozen):
+				return {"ok": false, "reason": "stuck", "moves": []}
+			frozen.append(target)
+		var tile_a := row * N + (N - 1)
+		var tile_b := row * N + N
+		if not _place_two(board, moves, tile_a, row * N + N - 2, tile_b, row * N + N - 1, frozen):
+			return {"ok": false, "reason": "stuck", "moves": []}
+		frozen.append(row * N + N - 2)
+		frozen.append(row * N + N - 1)
+	for col in range(N - 2):
+		var upper := (N - 2) * N + col + 1
+		var lower := (N - 1) * N + col + 1
+		if not _place_two(board, moves, upper, (N - 2) * N + col, lower, (N - 1) * N + col, frozen):
+			return {"ok": false, "reason": "stuck", "moves": []}
+		frozen.append((N - 2) * N + col)
+		frozen.append((N - 1) * N + col)
+	var cells: Array = []
+	for row in [N - 2, N - 1]:
+		for col in [N - 2, N - 1]:
+			cells.append(row * N + col)
+	var corner: Variant = _bfs_region(board, cells)
+	if corner == null:
+		return {"ok": false, "reason": "stuck", "moves": []}
+	_apply_steps(board, moves, corner)
+	if not is_solved(board):
+		return {"ok": false, "reason": "stuck", "moves": []}
+	return {"ok": true, "reason": "demo", "moves": moves}
+
+
+static func _place_one(board: Array, moves: Array, tile: int, target: int, frozen: Array) -> bool:
+	if int(board[target]) == tile:
+		return true
+	var path: Variant = _bfs_one(board, tile, target, frozen)
+	if path == null:
+		return false
+	_apply_steps(board, moves, path)
+	return int(board[target]) == tile
+
+
+static func _place_two(board: Array, moves: Array, tile_a: int, target_a: int, tile_b: int, target_b: int, frozen: Array) -> bool:
+	if int(board[target_a]) == tile_a and int(board[target_b]) == tile_b:
+		return true
+	var path: Variant = _bfs_two(board, tile_a, target_a, tile_b, target_b, frozen)
+	if path == null:
+		return false
+	_apply_steps(board, moves, path)
+	return int(board[target_a]) == tile_a and int(board[target_b]) == tile_b
+
+
+static func _apply_steps(board: Array, moves: Array, path: Array) -> void:
+	for step in path:
+		var dr := int(step["dr"])
+		var dc := int(step["dc"])
+		var tile := move_blank(board, dr, dc)
+		moves.append({
+			"dr": dr,
+			"dc": dc,
+			"tile": tile,
+			"name": _dir_label(dr, dc),
+		})
+
+
+static func _dir_label(dr: int, dc: int) -> String:
+	if dr < 0:
+		return "上"
+	if dr > 0:
+		return "下"
+	if dc < 0:
+		return "左"
+	return "右"
+
+
+static func _blocked(frozen: Array) -> PackedByteArray:
+	var blocked := PackedByteArray()
+	blocked.resize(N * N)
+	for cell in frozen:
+		blocked[int(cell)] = 1
+	return blocked
+
+
+static func _encode_step(dr: int, dc: int) -> int:
+	return (dr + 1) * 3 + (dc + 1)
+
+
+static func _decode_step(code: int) -> Dictionary:
+	return {"dr": int(code / 3) - 1, "dc": code % 3 - 1}
+
+
+static func _walk_back(parent: Dictionary, step_of: Dictionary, found: int, start: int) -> Array:
+	var path: Array = []
+	var cur := found
+	while cur != start:
+		path.append(_decode_step(int(step_of[cur])))
+		cur = int(parent[cur])
+	path.reverse()
+	return path
+
+
+static func _bfs_one(board: Array, tile: int, target: int, frozen: Array) -> Variant:
+	var blocked := _blocked(frozen)
+	var span := N * N
+	var start := int(board.find(tile)) * span + blank_index(board)
+	if int(board.find(tile)) == target:
+		return []
+	var queue: Array = [start]
+	var parent := {start: -1}
+	var step_of := {}
+	var head := 0
+	var found := -1
+	while head < queue.size():
+		var state: int = queue[head]
+		head += 1
+		var tile_pos := int(state / span)
+		var blank_pos := state % span
+		if tile_pos == target:
+			found = state
+			break
+		var row := int(blank_pos / N)
+		var col := blank_pos % N
+		for direction in DIRS:
+			var next_row: int = row + int(direction["dr"])
+			var next_col: int = col + int(direction["dc"])
+			if next_row < 0 or next_row >= N or next_col < 0 or next_col >= N:
+				continue
+			var index := next_row * N + next_col
+			if blocked[index] != 0:
+				continue
+			var next_tile := tile_pos
+			var next_blank := index
+			if index == tile_pos:
+				next_tile = blank_pos
+				next_blank = tile_pos
+			var nxt := next_tile * span + next_blank
+			if parent.has(nxt):
+				continue
+			parent[nxt] = state
+			step_of[nxt] = _encode_step(int(direction["dr"]), int(direction["dc"]))
+			queue.append(nxt)
+	if found < 0:
+		return null
+	return _walk_back(parent, step_of, found, start)
+
+
+static func _bfs_two(board: Array, tile_a: int, target_a: int, tile_b: int, target_b: int, frozen: Array) -> Variant:
+	var blocked := _blocked(frozen)
+	var span := N * N
+	var pos_a := int(board.find(tile_a))
+	var pos_b := int(board.find(tile_b))
+	var start := (pos_a * span + pos_b) * span + blank_index(board)
+	if pos_a == target_a and pos_b == target_b:
+		return []
+	var queue: Array = [start]
+	var parent := {start: -1}
+	var step_of := {}
+	var head := 0
+	var found := -1
+	while head < queue.size():
+		var state: int = queue[head]
+		head += 1
+		var blank_pos := state % span
+		var rest := int(state / span)
+		var at_b := rest % span
+		var at_a := int(rest / span)
+		if at_a == target_a and at_b == target_b:
+			found = state
+			break
+		var row := int(blank_pos / N)
+		var col := blank_pos % N
+		for direction in DIRS:
+			var next_row: int = row + int(direction["dr"])
+			var next_col: int = col + int(direction["dc"])
+			if next_row < 0 or next_row >= N or next_col < 0 or next_col >= N:
+				continue
+			var index := next_row * N + next_col
+			if blocked[index] != 0:
+				continue
+			var next_a := at_a
+			var next_b := at_b
+			var next_blank := index
+			if index == at_a:
+				next_a = blank_pos
+				next_blank = at_a
+			elif index == at_b:
+				next_b = blank_pos
+				next_blank = at_b
+			var nxt := (next_a * span + next_b) * span + next_blank
+			if parent.has(nxt):
+				continue
+			parent[nxt] = state
+			step_of[nxt] = _encode_step(int(direction["dr"]), int(direction["dc"]))
+			queue.append(nxt)
+	if found < 0:
+		return null
+	return _walk_back(parent, step_of, found, start)
+
+
+static func _bfs_region(board: Array, cells: Array) -> Variant:
+	var base := N * N
+	var slot_of := {}
+	var goal := 0
+	var start := 0
+	for index in range(cells.size()):
+		var cell := int(cells[index])
+		slot_of[cell] = index
+		var goal_value := 0 if cell == N * N - 1 else cell + 1
+		goal = goal * base + goal_value
+		start = start * base + int(board[cell])
+	if start == goal:
+		return []
+	var queue: Array = [start]
+	var parent := {start: -1}
+	var step_of := {}
+	var head := 0
+	var found := -1
+	while head < queue.size():
+		var state: int = queue[head]
+		head += 1
+		if state == goal:
+			found = state
+			break
+		var values: Array = []
+		values.resize(cells.size())
+		var temp := state
+		for index in range(cells.size() - 1, -1, -1):
+			values[index] = temp % base
+			temp = int(temp / base)
+		var blank_slot := values.find(0)
+		var cell := int(cells[blank_slot])
+		var row := int(cell / N)
+		var col := cell % N
+		for direction in DIRS:
+			var next_row: int = row + int(direction["dr"])
+			var next_col: int = col + int(direction["dc"])
+			if next_row < 0 or next_row >= N or next_col < 0 or next_col >= N:
+				continue
+			var neighbor := next_row * N + next_col
+			if not slot_of.has(neighbor):
+				continue
+			var other: int = slot_of[neighbor]
+			var swapped := values.duplicate()
+			var tmp = swapped[blank_slot]
+			swapped[blank_slot] = swapped[other]
+			swapped[other] = tmp
+			var nxt := 0
+			for value in swapped:
+				nxt = nxt * base + int(value)
+			if parent.has(nxt):
+				continue
+			parent[nxt] = state
+			step_of[nxt] = _encode_step(int(direction["dr"]), int(direction["dc"]))
+			queue.append(nxt)
+	if found < 0:
+		return null
+	return _walk_back(parent, step_of, found, start)

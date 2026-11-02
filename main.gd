@@ -492,7 +492,7 @@ func _on_random_deal() -> void:
 	history.clear()
 	source_text = "随机开局"
 	var distance := Puzzle.tile_manhattan(board)
-	note_text = "从终态随机滑动 100 步生成，一定可解。棋子曼哈顿距离 %d，这是最少还要滑的步数下界。方向键或点击来玩，步数从 0 计。" % distance
+	note_text = "从终态随机滑动 100 步生成，一定可解。棋子曼哈顿距离 %d。可以自己滑，也可以点自动还原看演示。" % distance
 	_place_tiles()
 	_refresh()
 
@@ -557,25 +557,28 @@ func _on_solve() -> void:
 		_refresh()
 		return
 	var lower_bound := Puzzle.tile_manhattan(board)
-	if lower_bound > 12:
-		note_text = "棋子曼哈顿距离是 %d，深过自动还原的 12 步上限。这局请自己滑。" % lower_bound
-		_refresh()
-		return
-	note_text = "正在搜索最短滑动步骤…"
+	var shortest := lower_bound <= 12
+	note_text = "正在搜索最短滑动步骤…" if shortest else "这局比较深，正在编排还原演示…"
 	_refresh()
 	busy = true
 	_set_buttons_disabled(true)
 	await get_tree().process_frame
 	await get_tree().process_frame
-	var result := Puzzle.solve(board, 14)
+	var result: Dictionary = Puzzle.solve(board, 14) if shortest else Puzzle.solve_demo(board)
+	if shortest and not result["ok"]:
+		result = Puzzle.solve_demo(board)
+		shortest = false
 	if not result["ok"]:
 		busy = false
-		note_text = "没有在上限内找到解（%s）。" % str(result["reason"])
+		note_text = "没有找到还原步骤（%s）。" % str(result["reason"])
 		_set_buttons_disabled(false)
 		_refresh()
 		return
 	var count: int = result["moves"].size()
-	note_text = "找到 %d 步，开始按最短解播放。" % count
+	if shortest:
+		note_text = "找到 %d 步最短解，开始播放。" % count
+	else:
+		note_text = "找到 %d 步。这不是最短，用来演示随机开局怎么滑回去。" % count
 	_refresh()
 	await _play_steps(result["moves"])
 	if Puzzle.is_solved(board):
@@ -588,10 +591,11 @@ func _play_steps(steps: Array) -> void:
 	var token := play_token
 	busy = true
 	_set_buttons_disabled(true)
+	var duration := 0.09 if steps.size() <= 24 else 0.045
 	for step in steps:
 		if token != play_token:
 			return
-		var moved := await _animate_step(int(step["dr"]), int(step["dc"]))
+		var moved := await _animate_step(int(step["dr"]), int(step["dc"]), duration)
 		if not moved:
 			note_text = "这一步会滑出棋盘，已停住。"
 			break
@@ -602,7 +606,7 @@ func _play_steps(steps: Array) -> void:
 	_refresh()
 
 
-func _animate_step(dr: int, dc: int) -> bool:
+func _animate_step(dr: int, dc: int, duration: float = 0.09) -> bool:
 	var blank := int(board.find(0))
 	var row := int(blank / Puzzle.N) + dr
 	var col := blank % Puzzle.N + dc
@@ -613,7 +617,7 @@ func _animate_step(dr: int, dc: int) -> bool:
 	undo_stack.append(board.duplicate())
 	var button: Button = tiles[tile]
 	var tween := create_tween()
-	tween.tween_property(button, "position", _cell_origin(blank), 0.09).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(button, "position", _cell_origin(blank), duration).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	await tween.finished
 	board[blank] = tile
 	board[index] = 0

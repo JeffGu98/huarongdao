@@ -12,7 +12,7 @@ config_version=5
 
 config/name="数字华容道"
 config/description="5×5 数字滑动拼图。照片局面用来验证可解性，随机开局可以玩。"
-config/version="1.0.1"
+config/version="1.0.2"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.png"
