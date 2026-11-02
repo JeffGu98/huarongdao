@@ -8,7 +8,7 @@
 
 ## 安卓安装
 
-在 [Releases](https://github.com/JeffGu98/huarongdao/releases) 下载 `huarongdao-1.0.0.apk`。安装前允许这个来源的应用。界面按竖屏排。
+在 [Releases](https://github.com/JeffGu98/huarongdao/releases) 下载 `huarongdao-1.0.1.apk`。安装前允许这个来源的应用。界面按竖屏排，棋盘按屏幕宽度铺开。
 
 点数字，或用方向键移动空格。红边是还没归位的块。
 

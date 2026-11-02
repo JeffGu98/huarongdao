@@ -39,14 +39,43 @@ func _check_scene() -> void:
 		push_error("底行没有在第 4 行下面")
 		quit(1)
 		return
+	var host_width: float = game.board_host.size.x
+	if host_width < 600.0:
+		push_error("棋盘区域没有铺开：%s" % str(game.board_host.size))
+		quit(1)
+		return
+	game.get_window().size = Vector2i(820, 1800)
+	await process_frame
+	await process_frame
+	game._layout_board()
+	var phone_host: Vector2 = game.board_host.size
+	if phone_host.x < 700.0 or phone_host.y < phone_host.x:
+		push_error("竖屏窗口没有把宽度留给棋盘：%s" % str(phone_host))
+		quit(1)
+		return
+	# 手机竖屏时棋盘区域又高又窄，宽度决定格子。
+	var phone_width := phone_host.x
+	game._layout_board()
 	var tile_size: Vector2 = game.tiles[1].size
-	if absf(tile_size.x - game.TILE) > 1.0 or absf(tile_size.y - game.TILE) > 1.0:
-		push_error("格子尺寸不对：%s" % str(tile_size))
+	if absf(tile_size.x - tile_size.y) > 1.0 or tile_size.x < phone_width * 0.17:
+		push_error("手机宽度下格子仍然偏小：%s / %s" % [str(tile_size), str(phone_width)])
 		quit(1)
 		return
 	var step_x: float = game.tiles[2].position.x - game.tiles[1].position.x
-	if absf(step_x - float(game.TILE + game.GAP)) > 1.0:
+	if absf(step_x - (tile_size.x + game.gap_px)) > 1.5:
 		push_error("相邻格子间距不对：%s" % str(step_x))
+		quit(1)
+		return
+	var number_label: Label = game.number_labels[10]
+	var number_size := number_label.get_theme_font_size("font_size")
+	if float(number_size) < tile_size.x * 0.5:
+		push_error("数字字号太小：%s / %s" % [str(number_size), str(tile_size.x)])
+		quit(1)
+		return
+	var word_label: Label = game.word_labels[23]
+	var word_size := word_label.get_theme_font_size("font_size")
+	if float(word_size) < tile_size.x * 0.1:
+		push_error("英文词字号太小：%s" % str(word_size))
 		quit(1)
 		return
 	await game._animate_step(0, -1)

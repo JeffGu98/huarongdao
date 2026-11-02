@@ -2,9 +2,6 @@ extends Control
 
 const Puzzle = preload("res://puzzle.gd")
 
-const TILE := 92
-const GAP := 7
-const FRAME := 14
 const WORDS := [
 	"",
 	"one", "two", "three", "four", "five",
@@ -40,6 +37,14 @@ var banner: Panel
 var action_buttons: Array = []
 var font_regular: Font
 var font_bold: Font
+var tile_px := 140.0
+var gap_px := 12.0
+var frame_px := 14.0
+var board_host: Control
+var board_root: Panel
+var number_labels := {}
+var word_labels := {}
+var laying_out := false
 
 
 func _ready() -> void:
@@ -48,7 +53,7 @@ func _ready() -> void:
 	font_bold = _make_font(700)
 	var theme := Theme.new()
 	theme.default_font = font_regular
-	theme.default_font_size = 18
+	theme.default_font_size = 28
 	self.theme = theme
 
 	var background := ColorRect.new()
@@ -59,41 +64,43 @@ func _ready() -> void:
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 28)
-	margin.add_theme_constant_override("margin_right", 28)
-	margin.add_theme_constant_override("margin_top", 22)
-	margin.add_theme_constant_override("margin_bottom", 18)
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
 	add_child(margin)
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	margin.add_child(scroll)
-
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 10)
+	column.set_anchors_preset(Control.PRESET_FULL_RECT)
+	column.add_theme_constant_override("separation", 8)
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(column)
+	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(column)
 
 	var title := Label.new()
 	title.text = "数字华容道 · 还原验证"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_override("font", font_bold)
-	title.add_theme_font_size_override("font_size", 32)
+	title.add_theme_font_size_override("font_size", 34)
 	title.add_theme_color_override("font_color", Color("1d1a17"))
 	column.add_child(title)
 
 	var subtitle := Label.new()
 	subtitle.text = "Ruizb Sliding Block Puzzle    还原顺序 · 挑战思维"
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.add_theme_font_size_override("font_size", 15)
+	subtitle.add_theme_font_size_override("font_size", 18)
+	subtitle.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	subtitle.add_theme_color_override("font_color", Color("5e584f"))
 	column.add_child(subtitle)
 
-	var center := CenterContainer.new()
-	column.add_child(center)
-	center.add_child(_build_board())
+	board_host = Control.new()
+	board_host.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board_host.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	board_host.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board_host.resized.connect(_layout_board)
+	column.add_child(board_host)
+	board_root = _build_board()
+	board_host.add_child(board_root)
 
 	banner = Panel.new()
 	banner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -105,7 +112,7 @@ func _ready() -> void:
 	verdict_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	verdict_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	verdict_label.add_theme_font_override("font", font_bold)
-	verdict_label.add_theme_font_size_override("font_size", 28)
+	verdict_label.add_theme_font_size_override("font_size", 32)
 	banner.add_child(verdict_label)
 
 	stats_label = _body_label()
@@ -114,26 +121,25 @@ func _ready() -> void:
 	note_label.add_theme_color_override("font_color", Color("3f3a34"))
 	column.add_child(note_label)
 
-	var row_one := HBoxContainer.new()
-	row_one.alignment = BoxContainer.ALIGNMENT_CENTER
-	row_one.add_theme_constant_override("separation", 10)
-	column.add_child(row_one)
-	var row_two := HBoxContainer.new()
-	row_two.alignment = BoxContainer.ALIGNMENT_CENTER
-	row_two.add_theme_constant_override("separation", 10)
-	column.add_child(row_two)
-
-	row_one.add_child(_action_button("重置为照片", Color("efe6d6"), _on_reset))
-	row_one.add_child(_action_button("撤销一步", Color("e4def4"), _on_undo))
-	row_one.add_child(_action_button("拆出交换 23 和 24", Color("f3c1b0"), _on_swap))
-	row_two.add_child(_action_button("随机开局", Color("9fd4ef"), _on_random_deal))
-	row_two.add_child(_action_button("打乱可解局（8 步）", Color("f6e27a"), _on_scramble))
-	row_two.add_child(_action_button("自动还原", Color("b7e3c8"), _on_solve))
+	var button_grid := GridContainer.new()
+	button_grid.columns = 3
+	button_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button_grid.add_theme_constant_override("h_separation", 8)
+	button_grid.add_theme_constant_override("v_separation", 8)
+	column.add_child(button_grid)
+	button_grid.add_child(_action_button("重置照片", Color("efe6d6"), _on_reset))
+	button_grid.add_child(_action_button("撤销", Color("e4def4"), _on_undo))
+	button_grid.add_child(_action_button("交换 23/24", Color("f3c1b0"), _on_swap))
+	button_grid.add_child(_action_button("随机开局", Color("9fd4ef"), _on_random_deal))
+	button_grid.add_child(_action_button("8 步浅局", Color("f6e27a"), _on_scramble))
+	button_grid.add_child(_action_button("自动还原", Color("b7e3c8"), _on_solve))
 
 	history_label = _body_label()
 	column.add_child(history_label)
 
 	_load_photo()
+	resized.connect(_layout_board)
+	get_viewport().size_changed.connect(_layout_board)
 
 
 func _make_font(weight: int) -> Font:
@@ -152,10 +158,9 @@ func _make_font(weight: int) -> Font:
 	return fallback
 
 
-func _build_board() -> Control:
-	var side := FRAME * 2 + Puzzle.N * TILE + (Puzzle.N - 1) * GAP
+func _build_board() -> Panel:
 	var root := Panel.new()
-	root.custom_minimum_size = Vector2(side, side)
+	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var tray := StyleBoxFlat.new()
 	tray.bg_color = Color("fbf8f2")
 	tray.set_corner_radius_all(28)
@@ -167,18 +172,12 @@ func _build_board() -> Control:
 	for index in range(Puzzle.N * Puzzle.N):
 		var slot := Panel.new()
 		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.custom_minimum_size = Vector2(TILE, TILE)
-		slot.position = _cell_origin(index)
-		slot.size = Vector2(TILE, TILE)
 		root.add_child(slot)
-		slot.size = Vector2(TILE, TILE)
 		slots.append(slot)
 
 	for value in range(1, Puzzle.N * Puzzle.N):
 		var button := Button.new()
 		button.focus_mode = Control.FOCUS_NONE
-		button.custom_minimum_size = Vector2(TILE, TILE)
-		button.size = Vector2(TILE, TILE)
 		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var number := Label.new()
 		number.name = "Number"
@@ -186,10 +185,7 @@ func _build_board() -> Control:
 		number.text = str(value)
 		number.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		number.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		number.position = Vector2(0, 8)
-		number.size = Vector2(TILE, 48)
 		number.add_theme_font_override("font", font_bold)
-		number.add_theme_font_size_override("font_size", 34)
 		number.add_theme_color_override("font_color", Color("1c1c1c"))
 		button.add_child(number)
 		var word := Label.new()
@@ -197,25 +193,67 @@ func _build_board() -> Control:
 		word.text = WORDS[value]
 		word.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		word.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		word.position = Vector2(2, 56)
-		word.size = Vector2(TILE - 4, 22)
-		word.add_theme_font_size_override("font_size", 11)
 		word.add_theme_color_override("font_color", Color("243038"))
 		button.add_child(word)
 		button.pressed.connect(_on_tile.bind(value))
 		root.add_child(button)
-		button.size = Vector2(TILE, TILE)
-		number.size = Vector2(TILE, 48)
-		word.size = Vector2(TILE - 4, 22)
 		tiles[value] = button
+		number_labels[value] = number
+		word_labels[value] = word
 	return root
+
+
+func _layout_board() -> void:
+	if laying_out or board_host == null:
+		return
+	var avail := board_host.size
+	if avail.x < 80.0 or avail.y < 80.0:
+		return
+	laying_out = true
+	var side := minf(avail.x, avail.y)
+	frame_px = clampf(side * 0.01, 4.0, 14.0)
+	gap_px = clampf(side * 0.012, 4.0, 12.0)
+	tile_px = (side - frame_px * 2.0 - gap_px * 4.0) / float(Puzzle.N)
+	board_root.custom_minimum_size = Vector2.ZERO
+	board_root.size = Vector2(side, side)
+	board_root.position = Vector2((avail.x - side) * 0.5, (avail.y - side) * 0.5)
+	var radius := maxi(int(tile_px * 0.16), 8)
+	var number_size := int(tile_px * 0.56)
+	var word_size := mini(int(tile_px * 0.13), int((tile_px - 8.0) / 6.6))
+	word_size = maxi(word_size, 11)
+	for index in range(slots.size()):
+		var slot: Panel = slots[index]
+		slot.position = _cell_origin(index)
+		slot.size = Vector2(tile_px, tile_px)
+		slot.custom_minimum_size = Vector2.ZERO
+	for value in range(1, Puzzle.N * Puzzle.N):
+		var button: Button = tiles[value]
+		button.custom_minimum_size = Vector2.ZERO
+		button.size = Vector2(tile_px, tile_px)
+		var number: Label = number_labels[value]
+		number.position = Vector2(0, tile_px * 0.02)
+		number.size = Vector2(tile_px, tile_px * 0.60)
+		number.add_theme_font_size_override("font_size", number_size)
+		var word: Label = word_labels[value]
+		word.position = Vector2(2, tile_px * 0.60)
+		word.size = Vector2(tile_px - 4, tile_px * 0.34)
+		word.clip_text = true
+		word.add_theme_font_size_override("font_size", word_size)
+	var tray := board_root.get_theme_stylebox("panel") as StyleBoxFlat
+	if tray != null:
+		tray.set_corner_radius_all(radius)
+	if not board.is_empty():
+		_place_tiles()
+	laying_out = false
 
 
 func _action_button(text: String, color: Color, callback: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.focus_mode = Control.FOCUS_NONE
-	button.add_theme_font_size_override("font_size", 16)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.custom_minimum_size = Vector2(0, 72)
+	button.add_theme_font_size_override("font_size", 26)
 	button.add_theme_color_override("font_color", Color("1c140f"))
 	button.add_theme_color_override("font_hover_color", Color("1c140f"))
 	button.add_theme_color_override("font_pressed_color", Color("1c140f"))
@@ -225,8 +263,8 @@ func _action_button(text: String, color: Color, callback: Callable) -> Button:
 		style.set_corner_radius_all(12)
 		style.content_margin_left = 14
 		style.content_margin_right = 14
-		style.content_margin_top = 10
-		style.content_margin_bottom = 10
+		style.content_margin_top = 12
+		style.content_margin_bottom = 12
 		style.bg_color = color
 		if state == "hover":
 			style.bg_color = color.lightened(0.06)
@@ -244,7 +282,7 @@ func _body_label() -> Label:
 	var label := Label.new()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.add_theme_font_size_override("font_size", 16)
+	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", Color("2c2824"))
 	return label
 
@@ -252,7 +290,7 @@ func _body_label() -> Label:
 func _cell_origin(index: int) -> Vector2:
 	var row := int(index / Puzzle.N)
 	var col := index % Puzzle.N
-	return Vector2(FRAME + col * (TILE + GAP), FRAME + row * (TILE + GAP))
+	return Vector2(frame_px + col * (tile_px + gap_px), frame_px + row * (tile_px + gap_px))
 
 
 func _load_photo() -> void:
@@ -274,7 +312,7 @@ func _place_tiles() -> void:
 			continue
 		var button: Button = tiles[value]
 		button.position = _cell_origin(index)
-		button.size = Vector2(TILE, TILE)
+		button.size = Vector2(tile_px, tile_px)
 	_restyle()
 
 
@@ -283,7 +321,7 @@ func _restyle() -> void:
 	for index in range(slots.size()):
 		var slot: Panel = slots[index]
 		var style := StyleBoxFlat.new()
-		style.set_corner_radius_all(18)
+		style.set_corner_radius_all(maxi(int(tile_px * 0.16), 10))
 		style.bg_color = Color("d9d3c7") if index == blank else Color("ece7dc")
 		slot.add_theme_stylebox_override("panel", style)
 	for value in range(1, Puzzle.N * Puzzle.N):
@@ -292,13 +330,13 @@ func _restyle() -> void:
 		var button: Button = tiles[value]
 		var style := StyleBoxFlat.new()
 		style.bg_color = ROW_COLORS[int((value - 1) / Puzzle.N)]
-		style.set_corner_radius_all(18)
+		style.set_corner_radius_all(maxi(int(tile_px * 0.16), 10))
 		style.shadow_color = Color(0, 0, 0, 0.1)
 		style.shadow_size = 3
 		style.shadow_offset = Vector2(0, 2)
 		if here != home:
 			style.border_color = Color("9d1c22")
-			style.set_border_width_all(4)
+			style.set_border_width_all(maxi(int(tile_px * 0.045), 4))
 		button.add_theme_stylebox_override("normal", style)
 		button.add_theme_stylebox_override("hover", style)
 		button.add_theme_stylebox_override("pressed", style)
@@ -320,13 +358,12 @@ func _refresh() -> void:
 	band.set_corner_radius_all(16)
 	band.bg_color = Color("e5f6ea") if solved else (Color("f8efd4") if can_solve else Color("f8e4e1"))
 	banner.add_theme_stylebox_override("panel", band)
-	stats_label.text = "来源：%s\n数字逆序数（不计空格）%d，奇偶为%s。5×5 上滑动不会改变这个奇偶。\n含空格逆序数 %d，空格曼哈顿 %d，两者之和 mod 2 = %d。\n棋子曼哈顿 %d，这是滑到终态的步数下界。" % [
+	stats_label.text = "来源：%s\n数字逆序数（不计空格）%d，奇偶为%s。含空格逆序数 %d，空格曼哈顿 %d。棋子曼哈顿 %d。" % [
 		source_text,
 		numbered,
 		"奇" if numbered % 2 else "偶",
 		blank_inversions,
 		blank_distance,
-		(blank_inversions + blank_distance) % 2,
 		distance,
 	]
 	note_label.text = note_text
@@ -334,9 +371,10 @@ func _refresh() -> void:
 		history_label.text = "本局滑动：还没有。"
 	else:
 		var lines: PackedStringArray = PackedStringArray()
-		for entry in history:
-			lines.append(str(entry))
-		history_label.text = "本局滑动：\n" + "\n".join(lines)
+		var start := maxi(history.size() - 3, 0)
+		for index in range(start, history.size()):
+			lines.append(str(history[index]))
+		history_label.text = "最近滑动：\n" + "\n".join(lines)
 
 
 func _unhandled_input(event: InputEvent) -> void:
