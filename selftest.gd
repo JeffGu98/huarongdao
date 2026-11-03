@@ -21,22 +21,16 @@ func _check_scene() -> void:
 		quit(1)
 		return
 	var text := str(verdict.text)
-	if "不可解" not in text:
-		push_error("开局判定不是不可解：%s" % text)
+	if game.mode != "play" or not Puzzle.solvable(game.board) or Puzzle.is_solved(game.board):
+		push_error("开局不是可玩的局：%s" % text)
 		quit(1)
 		return
-	if int(game.board.find(0)) != 24:
-		push_error("空格不在右下角")
+	if "步数" not in text:
+		push_error("对局横幅没有步数：%s" % text)
 		quit(1)
 		return
-	var tile_24: Control = game.tiles[24]
-	var tile_23: Control = game.tiles[23]
-	if tile_24.position.x >= tile_23.position.x:
-		push_error("24 没有排在 23 左边")
-		quit(1)
-		return
-	if game.tiles[21].position.y <= game.tiles[16].position.y:
-		push_error("底行没有在第 4 行下面")
+	if game.speed_index != 0 or game._step_duration() < 0.25:
+		push_error("默认还原速度太快：%s" % str(game._step_duration()))
 		quit(1)
 		return
 	var host_width: float = game.board_host.size.x
@@ -61,11 +55,6 @@ func _check_scene() -> void:
 		push_error("手机宽度下格子仍然偏小：%s / %s" % [str(tile_size), str(phone_width)])
 		quit(1)
 		return
-	var step_x: float = game.tiles[2].position.x - game.tiles[1].position.x
-	if absf(step_x - (tile_size.x + game.gap_px)) > 1.5:
-		push_error("相邻格子间距不对：%s" % str(step_x))
-		quit(1)
-		return
 	var number_label: Label = game.number_labels[10]
 	var number_size := number_label.get_theme_font_size("font_size")
 	if float(number_size) < tile_size.x * 0.5:
@@ -76,6 +65,64 @@ func _check_scene() -> void:
 	var word_size := word_label.get_theme_font_size("font_size")
 	if float(word_size) < tile_size.x * 0.1:
 		push_error("英文词字号太小：%s" % str(word_size))
+		quit(1)
+		return
+	if word_label.visible:
+		push_error("英文词不应该一直显示")
+		quit(1)
+		return
+	game._on_hint()
+	var hinted := int(game.hint_value)
+	var hinted_at := int(game.board.find(hinted))
+	var hinted_blank := int(game.board.find(0))
+	if hinted < 1 or hinted > 24:
+		push_error("提示没有指出棋子")
+		quit(1)
+		return
+	if int(hinted_at / 5) != int(hinted_blank / 5) and hinted_at % 5 != hinted_blank % 5:
+		push_error("提示的棋子不和空格同行列")
+		quit(1)
+		return
+	game._start_deal(100)
+	game.stop_after = 1
+	await game._on_solve()
+	if game.playback or game.busy or Puzzle.is_solved(game.board) or game.move_count < 1:
+		push_error("停止后仍在还原或没有走出第一步")
+		quit(1)
+		return
+	if "停下" not in game.note_text:
+		push_error("停止没有留下提示：%s" % game.note_text)
+		quit(1)
+		return
+	game._on_speed()
+	game._on_speed()
+	if game.speed_index != 2 or game._step_duration() > 0.1:
+		push_error("速度没有切到快速")
+		quit(1)
+		return
+	game._enter_verify()
+	text = str(game.verdict_label.text)
+	if "不可解" not in text:
+		push_error("照片判定不是不可解：%s" % text)
+		quit(1)
+		return
+	if int(game.board.find(0)) != 24:
+		push_error("空格不在右下角")
+		quit(1)
+		return
+	var tile_24: Control = game.tiles[24]
+	var tile_23: Control = game.tiles[23]
+	if tile_24.position.x >= tile_23.position.x:
+		push_error("24 没有排在 23 左边")
+		quit(1)
+		return
+	if game.tiles[21].position.y <= game.tiles[16].position.y:
+		push_error("底行没有在第 4 行下面")
+		quit(1)
+		return
+	var step_x: float = game.tiles[2].position.x - game.tiles[1].position.x
+	if absf(step_x - (tile_size.x + game.gap_px)) > 1.5:
+		push_error("相邻格子间距不对：%s" % str(step_x))
 		quit(1)
 		return
 	await game._animate_step(0, -1)
