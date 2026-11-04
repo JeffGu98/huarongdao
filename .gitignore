@@ -1,7 +1,10 @@
 .godot/
+/android/
 build/
 *.apk
 *.aab
 export_credentials.cfg
 *.keystore
+credentials.env
+secrets/
 .DS_Store
