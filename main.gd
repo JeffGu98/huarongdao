@@ -69,6 +69,13 @@ const SPEED_SECONDS := [0.36, 0.18, 0.08]
 const DEAL_STEPS := [16, 40, 100]
 const DEAL_NAMES := ["简单", "普通", "难"]
 const HINT_PATH := "user://slide_hint_seen"
+const RELEASES_API := "https://api.github.com/repos/JeffGu98/huarongdao/releases/latest"
+const RELEASES_PAGE := "https://github.com/JeffGu98/huarongdao/releases/latest"
+const SEEN_PATH := "user://update_seen.cfg"
+
+var _page_margin: MarginContainer
+var _release_url := RELEASES_PAGE
+var _update_bar: Control
 
 
 func _ready() -> void:
@@ -92,6 +99,7 @@ func _ready() -> void:
 	margin.add_theme_constant_override("margin_right", 8)
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
+	_page_margin = margin
 	add_child(margin)
 
 	var column := VBoxContainer.new()
@@ -178,6 +186,7 @@ func _ready() -> void:
 	_start_deal(16)
 	resized.connect(_layout_board)
 	get_viewport().size_changed.connect(_layout_board)
+	_check_for_update()
 
 
 func _make_font(weight: int) -> Font:
@@ -895,3 +904,149 @@ func _set_buttons_disabled(disabled: bool) -> void:
 		button.disabled = disabled
 	if stop_button != null:
 		stop_button.disabled = not playback
+
+func _check_for_update() -> void:
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	http.use_threads = true
+	http.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(http)
+	http.request_completed.connect(_on_update_response.bind(http))
+	var headers := PackedStringArray([
+		"User-Agent: huarongdao",
+		"Accept: application/vnd.github+json",
+	])
+	var err := http.request(RELEASES_API, headers)
+	if err != OK:
+		http.queue_free()
+
+
+func _on_update_response(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray, http: HTTPRequest) -> void:
+	http.queue_free()
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		return
+	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var data: Dictionary = parsed
+	var tag := str(data.get("tag_name", "")).strip_edges()
+	if tag.is_empty() or not _is_newer(tag, str(ProjectSettings.get_setting("application/config/version", "0"))):
+		return
+	if _was_dismissed(tag):
+		return
+	var url := str(data.get("html_url", "")).strip_edges()
+	if not url.is_empty():
+		_release_url = url
+	_show_update_banner(tag)
+
+
+func _is_newer(remote: String, local: String) -> bool:
+	var a := _semver(remote)
+	var b := _semver(local)
+	for i in range(3):
+		if a[i] > b[i]:
+			return true
+		if a[i] < b[i]:
+			return false
+	return false
+
+
+func _semver(raw: String) -> PackedInt32Array:
+	var text := raw.strip_edges()
+	if text.begins_with("v") or text.begins_with("V"):
+		text = text.substr(1)
+	var parts := text.split(".")
+	var out := PackedInt32Array()
+	for i in range(3):
+		out.append(parts[i].to_int() if i < parts.size() else 0)
+	return out
+
+
+func _was_dismissed(tag: String) -> bool:
+	var config := ConfigFile.new()
+	if config.load(SEEN_PATH) != OK:
+		return false
+	return str(config.get_value("update", "dismissed", "")) == tag
+
+
+func _dismiss_update(tag: String) -> void:
+	var config := ConfigFile.new()
+	config.set_value("update", "dismissed", tag)
+	config.save(SEEN_PATH)
+
+
+func _show_update_banner(tag: String) -> void:
+	if _update_bar != null and is_instance_valid(_update_bar):
+		_update_bar.queue_free()
+	if _page_margin != null:
+		_page_margin.add_theme_constant_override("margin_bottom", 96)
+
+	var bar := Panel.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("2c2824")
+	style.set_corner_radius_all(12)
+	bar.add_theme_stylebox_override("panel", style)
+	bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	bar.offset_left = 16
+	bar.offset_right = -16
+	bar.offset_top = -84
+	bar.offset_bottom = -12
+	add_child(bar)
+	_update_bar = bar
+
+	var open_btn := Button.new()
+	open_btn.text = "有新版本 %s　·　点此查看" % tag
+	open_btn.focus_mode = Control.FOCUS_NONE
+	open_btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	open_btn.offset_right = -56
+	open_btn.add_theme_font_override("font", font_bold)
+	open_btn.add_theme_font_size_override("font_size", 20)
+	open_btn.add_theme_color_override("font_color", Color("f3e2c4"))
+	open_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_style_update_button(open_btn, Color("2c2824"))
+	open_btn.pressed.connect(_open_release)
+	bar.add_child(open_btn)
+
+	var close := Button.new()
+	close.text = "×"
+	close.focus_mode = Control.FOCUS_NONE
+	close.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
+	close.offset_left = -52
+	close.offset_right = -8
+	close.offset_top = -22
+	close.offset_bottom = 22
+	close.add_theme_font_size_override("font_size", 22)
+	close.add_theme_color_override("font_color", Color("8a8378"))
+	_style_update_button(close, Color("2c2824"))
+	close.pressed.connect(_hide_update_banner.bind(bar, tag))
+	bar.add_child(close)
+
+
+func _hide_update_banner(bar: Control, tag: String) -> void:
+	_dismiss_update(tag)
+	if bar != null and is_instance_valid(bar):
+		bar.queue_free()
+	if _update_bar == bar:
+		_update_bar = null
+	if _page_margin != null:
+		_page_margin.add_theme_constant_override("margin_bottom", 8)
+
+
+func _open_release() -> void:
+	OS.shell_open(_release_url)
+
+
+func _style_update_button(btn: Button, bg: Color) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = bg
+	normal.set_corner_radius_all(12)
+	btn.add_theme_stylebox_override("normal", normal)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = bg.lightened(0.1)
+	hover.set_corner_radius_all(12)
+	btn.add_theme_stylebox_override("hover", hover)
+	var pressed := StyleBoxFlat.new()
+	pressed.bg_color = bg.darkened(0.08)
+	pressed.set_corner_radius_all(12)
+	btn.add_theme_stylebox_override("pressed", pressed)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
