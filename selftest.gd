@@ -20,6 +20,12 @@ func _check_scene() -> void:
 		push_error("主场景没有判定条")
 		quit(1)
 		return
+	var version_label := game.find_child("VersionLabel", true, false) as Label
+	var expected_ver := "v%s" % str(ProjectSettings.get_setting("application/config/version", "")).strip_edges()
+	if version_label == null or version_label.text != expected_ver:
+		push_error("主场景版本号不对：%s != %s" % [version_label.text if version_label else "<missing>", expected_ver])
+		quit(1)
+		return
 	var text := str(verdict.text)
 	if game.mode != "play" or not Puzzle.solvable(game.board) or Puzzle.is_solved(game.board):
 		push_error("开局不是可玩的局：%s" % text)

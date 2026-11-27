@@ -119,6 +119,20 @@ func _ready() -> void:
 	title.add_theme_color_override("font_color", Color("1d1a17"))
 	column.add_child(title)
 
+	var version := str(ProjectSettings.get_setting("application/config/version", "")).strip_edges()
+	if not version.is_empty():
+		var version_label := Label.new()
+		version_label.name = "VersionLabel"
+		version_label.text = version if version.begins_with("v") or version.begins_with("V") else "v%s" % version
+		version_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		version_label.offset_right = -8
+		version_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		version_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		version_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		version_label.add_theme_font_size_override("font_size", 18)
+		version_label.add_theme_color_override("font_color", Color("7a7368"))
+		title.add_child(version_label)
+
 	subtitle_label = Label.new()
 	var subtitle := subtitle_label
 	subtitle.text = "核对照片局面。这一局不能靠滑动还原。"
